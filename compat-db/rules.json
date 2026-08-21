@@ -1,0 +1,532 @@
+{
+  "schema": 1,
+  "updated": "2026-08-21",
+  "_license": "PolyForm Noncommercial License 1.0.0 \u2014 same as the rest of Doppio, see LICENSE. This data is deliberately NOT public domain: which flag isolates which app is the accumulated knowledge that makes Doppio worth using. Noncommercial redistribution is permitted, so contributed rules can be shared freely.",
+  "_notes": [
+    "launchMode controls Dock identity. clone = APFS copy-on-write clone of the target (instant, no extra disk space, own Dock icon and name; must be regenerated after the target app updates). link = symlink wrapper that survives target updates, but only works for apps with no helper-subprocess architecture. direct = run the original binary in place, sharing the original's Dock tile.",
+    "clone is the default for app Shots. Verified on macOS 26.6: BOTH Chromium and Electron apps fail under link mode, because their helper processes resolve the framework through the target's real path and the seatbelt sandbox only permits the main bundle's subtree. Symptoms are 'file system sandbox blocked open()' (Chromium) and 'Unable to find helper app' (Electron).",
+    "Wrapper layout: the Doppio stub is installed at Contents/MacOS/DoppioShot and CFBundleExecutable points at it. The target's own binary sits beside it under its ORIGINAL name and is exec'd from there. Both halves matter: exec'ing from inside the wrapper is what gives the Shot its own Dock identity, and leaving the binary's name alone is what lets Chromium find its framework and Electron find its helpers. CFBundleName is also preserved verbatim. Do not rename the target binary \u2014 an earlier design parked it under a suffix and spoofed argv[0], which broke Chromium because it reads _NSGetExecutablePath, not argv[0].",
+    "Electron apps additionally require ElectronAsarIntegrity to be carried over from the target's Info.plist, or they abort with 'Failed to get integrity for validatable asar archive'. Doppio inherits the whole target plist and overrides only identity keys.",
+    "strategy controls data separation. ${dataDir} is substituted with the Shot's data directory at generation time.",
+    "Rules are matched most-specific-first: exact bundle ID, then longest bundle-ID prefix, then framework sniffing."
+  ],
+  "rules": [
+    {
+      "id": "chrome",
+      "bundleIDPrefixes": [
+        "com.google.Chrome"
+      ],
+      "frameworks": [],
+      "strategy": "chromium",
+      "launchMode": "clone",
+      "extraArgs": [
+        "--user-data-dir=${dataDir}"
+      ],
+      "extraEnv": {},
+      "notes": "Verified with `doppio verify`: own Dock identity, 9 helper processes, isolated profile, original app's signature still valid. Symlink (link) mode fails \u2014 the sandboxed helper's dlopen of Google Chrome Framework is denied.",
+      "verifiedOn": "macOS 26.6",
+      "contributor": "doppio"
+    },
+    {
+      "id": "chromium-generic",
+      "bundleIDPrefixes": [
+        "org.chromium.Chromium",
+        "com.microsoft.edgemac",
+        "com.brave.Browser",
+        "com.vivaldi.Vivaldi",
+        "com.operasoftware.Opera",
+        "company.thebrowser.Browser",
+        "com.google.Chrome.canary",
+        "com.microsoft.edgemac.Dev"
+      ],
+      "frameworks": [
+        "Chromium Framework.framework"
+      ],
+      "strategy": "chromium",
+      "launchMode": "clone",
+      "extraArgs": [
+        "--user-data-dir=${dataDir}"
+      ],
+      "extraEnv": {},
+      "notes": "Edge, Brave, Vivaldi, Opera, Arc and other Chromium shells behave like Chrome and are matched by bundle ID. The framework sniff only catches open-source Chromium builds, because branded builds name the framework after the brand (Chrome ships 'Google Chrome Framework.framework'). Unknown Chromium browsers still get clone mode via the launch-mode guard, which sniffs any '*Framework.framework'.",
+      "verifiedOn": null,
+      "contributor": null
+    },
+    {
+      "id": "claude-desktop",
+      "bundleIDPrefixes": [
+        "com.anthropic.claudefordesktop"
+      ],
+      "frameworks": [],
+      "strategy": "electron",
+      "launchMode": "clone",
+      "extraArgs": [
+        "--user-data-dir=${dataDir}"
+      ],
+      "extraEnv": {},
+      "notes": "Verified with `doppio verify`: own Dock identity, 8 helper processes, isolated user-data-dir, original app untouched and runnable alongside.",
+      "verifiedOn": "macOS 26.6",
+      "contributor": "doppio"
+    },
+    {
+      "id": "slack",
+      "bundleIDPrefixes": [
+        "com.tinyspeck.slackmacgap"
+      ],
+      "frameworks": [],
+      "strategy": "electron",
+      "launchMode": "clone",
+      "extraArgs": [
+        "--user-data-dir=${dataDir}"
+      ],
+      "extraEnv": {},
+      "notes": "Lets a second Slack hold a different set of workspaces.",
+      "verifiedOn": null,
+      "contributor": null
+    },
+    {
+      "id": "vscode",
+      "bundleIDPrefixes": [
+        "com.microsoft.VSCode",
+        "com.microsoft.VSCodeInsiders",
+        "com.visualstudio.code.oss"
+      ],
+      "frameworks": [],
+      "strategy": "electron",
+      "launchMode": "clone",
+      "extraArgs": [
+        "--user-data-dir=${dataDir}",
+        "--extensions-dir=${dataDir}/extensions"
+      ],
+      "extraEnv": {},
+      "notes": "extensions-dir is needed as well, otherwise both instances share extensions.",
+      "verifiedOn": null,
+      "contributor": null
+    },
+    {
+      "id": "cursor",
+      "bundleIDPrefixes": [
+        "com.todesktop.230313mzl4w4u92"
+      ],
+      "frameworks": [],
+      "strategy": "electron",
+      "launchMode": "clone",
+      "extraArgs": [
+        "--user-data-dir=${dataDir}",
+        "--extensions-dir=${dataDir}/extensions"
+      ],
+      "extraEnv": {},
+      "notes": "ToDesktop-packaged VS Code fork; same flags as VS Code.",
+      "verifiedOn": null,
+      "contributor": null
+    },
+    {
+      "id": "discord",
+      "bundleIDPrefixes": [
+        "com.hnc.Discord"
+      ],
+      "frameworks": [],
+      "strategy": "electron",
+      "launchMode": "clone",
+      "extraArgs": [
+        "--user-data-dir=${dataDir}",
+        "--multi-instance"
+      ],
+      "extraEnv": {},
+      "notes": "Discord needs --multi-instance in addition to a separate user-data-dir.",
+      "verifiedOn": null,
+      "contributor": null
+    },
+    {
+      "id": "notion",
+      "bundleIDPrefixes": [
+        "notion.id"
+      ],
+      "frameworks": [],
+      "strategy": "electron",
+      "launchMode": "clone",
+      "extraArgs": [
+        "--user-data-dir=${dataDir}"
+      ],
+      "extraEnv": {},
+      "notes": "Second Notion account.",
+      "verifiedOn": null,
+      "contributor": null
+    },
+    {
+      "id": "chatgpt",
+      "bundleIDPrefixes": [
+        "com.openai.chat"
+      ],
+      "frameworks": [],
+      "strategy": "none",
+      "launchMode": "clone",
+      "extraArgs": [],
+      "extraEnv": {},
+      "notes": "Native (not Electron) macOS app. A HOME override does nothing for it: NSHomeDirectory() ignores $HOME (measured \u2014 see docs/mechanism.md), so set to none rather than claiming isolation. Cloning still gives a separate Dock identity. Unverified.",
+      "verifiedOn": null,
+      "contributor": null
+    },
+    {
+      "id": "firefox",
+      "bundleIDPrefixes": [
+        "org.mozilla.firefox",
+        "org.mozilla.firefoxdeveloperedition",
+        "org.mozilla.nightly"
+      ],
+      "frameworks": [],
+      "strategy": "firefox",
+      "launchMode": "clone",
+      "extraArgs": [
+        "--profile",
+        "${dataDir}/profile",
+        "-no-remote"
+      ],
+      "extraEnv": {},
+      "notes": "-no-remote is mandatory: it bypasses Firefox's remoting single-instance check. Create the profile directory before first launch or the profile manager appears.",
+      "verifiedOn": null,
+      "contributor": null
+    },
+    {
+      "id": "firefox-forks",
+      "bundleIDPrefixes": [
+        "app.zen-browser.zen",
+        "io.gitlab.librewolf",
+        "net.waterfox.waterfox"
+      ],
+      "frameworks": [],
+      "strategy": "firefox",
+      "launchMode": "clone",
+      "extraArgs": [
+        "--profile",
+        "${dataDir}/profile",
+        "-no-remote"
+      ],
+      "extraEnv": {},
+      "notes": "Zen, LibreWolf, Waterfox use the Firefox profile mechanism.",
+      "verifiedOn": null,
+      "contributor": null
+    },
+    {
+      "id": "thunderbird",
+      "bundleIDPrefixes": [
+        "org.mozilla.thunderbird"
+      ],
+      "frameworks": [],
+      "strategy": "firefox",
+      "launchMode": "clone",
+      "extraArgs": [
+        "-profile",
+        "${dataDir}/profile",
+        "-no-remote"
+      ],
+      "extraEnv": {},
+      "notes": "Thunderbird takes a single-dash -profile.",
+      "verifiedOn": null,
+      "contributor": null
+    },
+    {
+      "id": "electron-generic",
+      "bundleIDPrefixes": [],
+      "frameworks": [
+        "Electron Framework.framework"
+      ],
+      "strategy": "electron",
+      "launchMode": "clone",
+      "extraArgs": [
+        "--user-data-dir=${dataDir}"
+      ],
+      "extraEnv": {},
+      "notes": "Framework sniffing: any unknown Electron app gets sensible defaults with no explicit rule.",
+      "verifiedOn": null,
+      "contributor": null
+    },
+    {
+      "id": "whatsapp",
+      "bundleIDPrefixes": [
+        "net.whatsapp.WhatsApp"
+      ],
+      "frameworks": [],
+      "strategy": "none",
+      "launchMode": "direct",
+      "extraArgs": [],
+      "extraEnv": {},
+      "notes": "TESTED AND NOT SUPPORTED. Cloning a sandboxed Mac App Store app produces a Shot that registers its own Dock identity and then exits within seconds, and macOS creates no container for the new bundle ID \u2014 so there is no data isolation and no second account. Set to direct mode so the UI says plainly that this app cannot be given a separate instance, rather than generating a Shot that looks fine and is not.",
+      "verifiedOn": "macOS 26.6",
+      "contributor": "doppio"
+    },
+    {
+      "id": "teams",
+      "bundleIDPrefixes": [
+        "com.microsoft.teams",
+        "com.microsoft.teams2"
+      ],
+      "frameworks": [],
+      "strategy": "electron",
+      "launchMode": "clone",
+      "extraArgs": [
+        "--user-data-dir=${dataDir}"
+      ],
+      "extraEnv": {},
+      "notes": "Second Teams tenant.",
+      "verifiedOn": null,
+      "contributor": null
+    },
+    {
+      "id": "obsidian",
+      "bundleIDPrefixes": [
+        "md.obsidian"
+      ],
+      "frameworks": [],
+      "strategy": "electron",
+      "launchMode": "clone",
+      "extraArgs": [
+        "--user-data-dir=${dataDir}"
+      ],
+      "extraEnv": {},
+      "notes": "Separate vault set and settings per Shot.",
+      "verifiedOn": null,
+      "contributor": null
+    },
+    {
+      "id": "postman",
+      "bundleIDPrefixes": [
+        "com.postmanlabs.mac"
+      ],
+      "frameworks": [],
+      "strategy": "electron",
+      "launchMode": "clone",
+      "extraArgs": [
+        "--user-data-dir=${dataDir}"
+      ],
+      "extraEnv": {},
+      "notes": "Separate Postman workspace logins.",
+      "verifiedOn": null,
+      "contributor": null
+    },
+    {
+      "id": "spotify",
+      "bundleIDPrefixes": [
+        "com.spotify.client"
+      ],
+      "frameworks": [],
+      "strategy": "none",
+      "launchMode": "direct",
+      "extraArgs": [],
+      "extraEnv": {},
+      "notes": "Spotify tolerates a second instance but offers no profile flag; data stays shared.",
+      "verifiedOn": null,
+      "contributor": null
+    },
+    {
+      "id": "obs",
+      "bundleIDPrefixes": [
+        "com.obsproject.obs-studio"
+      ],
+      "frameworks": [],
+      "strategy": "none",
+      "launchMode": "clone",
+      "extraArgs": [
+        "--multi"
+      ],
+      "extraEnv": {},
+      "notes": "--multi suppresses OBS's own already-running warning. Data isolation is NOT claimed: OBS is a native app and a HOME override does not move its config. Unverified.",
+      "verifiedOn": null,
+      "contributor": null
+    },
+    {
+      "id": "dropbox",
+      "bundleIDPrefixes": [
+        "com.getdropbox.dropbox"
+      ],
+      "frameworks": [],
+      "strategy": "none",
+      "launchMode": "clone",
+      "extraArgs": [],
+      "extraEnv": {},
+      "notes": "Native macOS app, so a HOME override does not move its data (NSHomeDirectory ignores $HOME). Set to none rather than overpromising. A second Dropbox account probably needs Dropbox's own support for it. Unverified.",
+      "verifiedOn": null,
+      "contributor": null
+    },
+    {
+      "id": "jetbrains",
+      "bundleIDPrefixes": [
+        "com.jetbrains.intellij",
+        "com.jetbrains.pycharm",
+        "com.jetbrains.WebStorm",
+        "com.jetbrains.goland",
+        "com.jetbrains.rider",
+        "com.jetbrains.CLion",
+        "com.jetbrains.datagrip"
+      ],
+      "frameworks": [],
+      "strategy": "env",
+      "launchMode": "clone",
+      "extraArgs": [],
+      "extraEnv": {
+        "IDEA_PROPERTIES": "${dataDir}/idea.properties",
+        "XDG_CONFIG_HOME": "${dataDir}/config",
+        "XDG_DATA_HOME": "${dataDir}/data",
+        "XDG_CACHE_HOME": "${dataDir}/cache"
+      },
+      "notes": "Attempts to redirect config and caches via XDG variables. UNVERIFIED and likely incomplete: JetBrains IDEs read XDG paths on Linux, and on macOS use ~/Library paths, so this rule may not isolate anything. IDEA_PROPERTIES also points at a file Doppio does not create. Needs testing by someone with a JetBrains IDE installed.",
+      "verifiedOn": null,
+      "contributor": null
+    },
+    {
+      "id": "android-studio",
+      "bundleIDPrefixes": [
+        "com.google.android.studio"
+      ],
+      "frameworks": [],
+      "strategy": "env",
+      "launchMode": "clone",
+      "extraArgs": [],
+      "extraEnv": {
+        "XDG_CONFIG_HOME": "${dataDir}/config",
+        "XDG_DATA_HOME": "${dataDir}/data",
+        "XDG_CACHE_HOME": "${dataDir}/cache",
+        "STUDIO_PROPERTIES": "${dataDir}/idea.properties"
+      },
+      "notes": "Same caveat as the JetBrains rule: XDG variables are a Linux convention and this is UNVERIFIED on macOS.",
+      "verifiedOn": null,
+      "contributor": null
+    },
+    {
+      "id": "eclipse",
+      "bundleIDPrefixes": [
+        "org.eclipse.platform.ide"
+      ],
+      "frameworks": [],
+      "strategy": "home",
+      "launchMode": "clone",
+      "extraArgs": [],
+      "extraEnv": {},
+      "notes": "Eclipse-platform apps keep their workspace under HOME and are JVM-based, so $HOME may be honoured where it is not for native apps. UNVERIFIED \u2014 confirm before trusting it.",
+      "verifiedOn": null,
+      "contributor": null
+    },
+    {
+      "id": "docker",
+      "bundleIDPrefixes": [
+        "com.docker.docker"
+      ],
+      "frameworks": [],
+      "strategy": "none",
+      "launchMode": "direct",
+      "extraArgs": [],
+      "extraEnv": {},
+      "notes": "Docker Desktop runs a privileged singleton VM; a second isolated instance is not supported. Listed so the UI can say so rather than silently producing a broken Shot.",
+      "verifiedOn": null,
+      "contributor": null
+    },
+    {
+      "id": "terminal-emulators",
+      "bundleIDPrefixes": [
+        "com.apple.Terminal",
+        "com.googlecode.iterm2",
+        "dev.warp.Warp-Stable",
+        "net.kovidgoyal.kitty",
+        "org.alacritty"
+      ],
+      "frameworks": [],
+      "strategy": "home",
+      "launchMode": "clone",
+      "extraArgs": [],
+      "extraEnv": {},
+      "notes": "A HOME override genuinely works here, because shells read $HOME directly rather than through Foundation \u2014 so a terminal Shot gets its own dotfiles and shell history. Still unverified. Note that Terminal.app lives on the read-only system volume, so its clone is a real byte copy rather than a free copy-on-write clone (measured: 3.7 MB -> 7.6 MB).",
+      "verifiedOn": null,
+      "contributor": null
+    },
+    {
+      "id": "figma",
+      "bundleIDPrefixes": [
+        "com.figma.Desktop"
+      ],
+      "frameworks": [],
+      "strategy": "electron",
+      "launchMode": "clone",
+      "extraArgs": [
+        "--user-data-dir=${dataDir}"
+      ],
+      "extraEnv": {},
+      "notes": "Separate Figma organisation logins.",
+      "verifiedOn": null,
+      "contributor": null
+    },
+    {
+      "id": "signal",
+      "bundleIDPrefixes": [
+        "org.whispersystems.signal-desktop"
+      ],
+      "frameworks": [],
+      "strategy": "electron",
+      "launchMode": "clone",
+      "extraArgs": [
+        "--user-data-dir=${dataDir}"
+      ],
+      "extraEnv": {},
+      "notes": "Second linked Signal device.",
+      "verifiedOn": null,
+      "contributor": null
+    },
+    {
+      "id": "telegram",
+      "bundleIDPrefixes": [
+        "ru.keepcoder.Telegram",
+        "com.tdesktop.Telegram"
+      ],
+      "frameworks": [],
+      "strategy": "none",
+      "launchMode": "direct",
+      "extraArgs": [],
+      "extraEnv": {},
+      "notes": "Untested, but Telegram from the Mac App Store is sandboxed like WhatsApp, which was tested and does not work: no container is created for the cloned bundle ID. Assume unsupported until someone verifies otherwise.",
+      "verifiedOn": null,
+      "contributor": null
+    },
+    {
+      "id": "sandboxed-generic",
+      "bundleIDPrefixes": [],
+      "frameworks": [
+        "__SANDBOXED__"
+      ],
+      "strategy": "none",
+      "launchMode": "direct",
+      "extraArgs": [],
+      "extraEnv": {},
+      "notes": "Sandboxed apps cannot currently be given isolated instances. The theory was that a cloned bundle ID would get its own container; tested with WhatsApp on macOS 26.6 and it does not \u2014 no container appears and the clone exits on launch. HOME overrides are also ignored under the sandbox. direct mode at least offers a second instance sharing the original's data, and tells the truth about it.",
+      "verifiedOn": "macOS 26.6",
+      "contributor": "doppio"
+    },
+    {
+      "id": "fallback",
+      "bundleIDPrefixes": [],
+      "frameworks": [],
+      "strategy": "none",
+      "launchMode": "clone",
+      "extraArgs": [],
+      "extraEnv": {},
+      "notes": "Last resort for unrecognised apps: a cloned wrapper for a separate Dock identity, and no claim of data isolation, because there is no way to know how an unknown app stores its data. If the app reads $HOME directly (shells, JVM and Eclipse-based tools do; native macOS apps do not), switch the Shot's data setting to 'Home directory override' by hand and verify with `doppio verify`.",
+      "verifiedOn": null,
+      "contributor": null
+    },
+    {
+      "id": "arduino-ide2",
+      "bundleIDPrefixes": [
+        "cc.arduino.IDE2"
+      ],
+      "frameworks": [],
+      "strategy": "electron",
+      "launchMode": "clone",
+      "extraArgs": [
+        "--user-data-dir=${dataDir}"
+      ],
+      "extraEnv": {},
+      "notes": "Arduino IDE 2 is Eclipse Theia, which is Electron \u2014 not an Eclipse-platform app, and a HOME override would not isolate it. Unverified.",
+      "verifiedOn": null,
+      "contributor": null
+    }
+  ],
+  "_verification": "verifiedOn is non-null only for rules checked with `doppio verify`, which launches the Shot and confirms: own Dock identity, helper processes alive, data written to the Shot's own location, the original app's signature still valid, and no new crash reports. A verified rule may still be a verified NEGATIVE \u2014 see the whatsapp and sandboxed-generic rules. A null verifiedOn means untested."
+}

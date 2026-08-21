@@ -1,0 +1,90 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# The whole project builds with the Command Line Tools alone — no Xcode project,
+# no third-party dependencies — so CI is just SwiftPM. macOS is required because
+# the code links AppKit, SwiftUI and WebKit.
+jobs:
+  build-and-test:
+    name: Build and test (${{ matrix.runner }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      # Everything was developed on macOS 26.6, but the project claims macOS 13
+      # as its minimum. Running on the older images is the only cheap evidence
+      # for that claim — nobody has tested those systems by hand.
+      matrix:
+        runner: [macos-14, macos-15, macos-latest]
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Show toolchain
+        run: |
+          swift --version
+          sw_vers
+          echo "arch: $(uname -m)"
+
+      - name: Build
+        run: swift build
+
+      # The suite is a plain executable rather than a testTarget: neither XCTest
+      # nor swift-testing is available with the Command Line Tools alone, and
+      # this way the tests run anywhere Swift does. It exits non-zero on failure.
+      - name: Test
+        run: swift run DoppioTests
+
+      # Catches breakage in the bundle assembly and ad-hoc signing, which the
+      # unit tests cannot see.
+      - name: Assemble Doppio.app
+        run: ./scripts/build-app.sh
+
+      - name: Verify the app bundle signed and is well formed
+        run: |
+          codesign --verify --verbose=1 build/Doppio.app
+          test -x "build/Doppio.app/Contents/MacOS/Doppio"
+          test -x "build/Doppio.app/Contents/Resources/DoppioShot"
+          test -x "build/Doppio.app/Contents/Resources/doppio"
+          test -f "build/Doppio.app/Contents/Resources/rules.json"
+
+      # Only one runner needs to prove the universal build works; it doubles
+      # the build time and is architecture-independent.
+      - name: Build universal
+        if: matrix.runner == 'macos-latest'
+        run: |
+          ./scripts/build-app.sh --universal
+          for binary in \
+            "build/Doppio.app/Contents/MacOS/Doppio" \
+            "build/Doppio.app/Contents/Resources/DoppioShot" \
+            "build/Doppio.app/Contents/Resources/doppio"; do
+            ARCHS=$(lipo -archs "$binary")
+            echo "$binary: $ARCHS"
+            case "$ARCHS" in
+              *x86_64*arm64*|*arm64*x86_64*) ;;
+              *) echo "::error::$binary is not universal ($ARCHS)"; exit 1 ;;
+            esac
+          done
+
+      - name: Compatibility database is valid
+        run: |
+          python3 - <<'PY'
+          import json, sys
+          db = json.load(open("compat-db/rules.json"))
+          rules = db["rules"]
+          ids = [r["id"] for r in rules]
+          assert len(ids) == len(set(ids)), "duplicate rule ids"
+          for r in rules:
+              for key in ("id", "strategy", "launchMode", "extraArgs", "extraEnv"):
+                  assert key in r, f"{r.get('id')} missing {key}"
+          # The shipped copy must match the source of truth, or the app and the
+          # repo disagree about what the rules are.
+          shipped = json.load(open("Sources/DoppioCore/Resources/rules.json"))
+          assert shipped == db, "Sources/DoppioCore/Resources/rules.json is out of sync with compat-db/rules.json"
+          print(f"{len(rules)} rules, "
+                f"{sum(len(r['bundleIDPrefixes']) for r in rules)} bundle ids, "
+                f"{sum(1 for r in rules if r['verifiedOn'])} verified")
+          PY

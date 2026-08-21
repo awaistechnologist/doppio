@@ -1,0 +1,131 @@
+name: Release
+
+# Cut a release by pushing a tag:
+#
+#     git tag -a v0.5.0 -m "Doppio 0.5.0"
+#     git push origin v0.5.0
+#
+# The tag is the trigger and the source of the version number; the job refuses
+# to build if it disagrees with DoppioPaths.appVersion, so a release can never
+# ship a binary that reports a different version than its tag.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build (e.g. v0.5.0)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Work out the version
+        id: version
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ github.event.inputs.tag }}"
+          fi
+          VERSION="${TAG#v}"
+          echo "tag=$TAG"         >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Check the tag matches the version in the source
+        run: |
+          SOURCE=$(grep -m1 'appVersion = ' Sources/DoppioCore/Models/DoppioPaths.swift | sed 's/.*"\(.*\)".*/\1/')
+          echo "tag says ${{ steps.version.outputs.version }}, source says $SOURCE"
+          if [ "$SOURCE" != "${{ steps.version.outputs.version }}" ]; then
+            echo "::error::Tag ${{ steps.version.outputs.tag }} does not match appVersion $SOURCE in DoppioPaths.swift"
+            exit 1
+          fi
+
+      - name: Test before shipping
+        run: swift run DoppioTests
+
+      # Both architectures: a copy of the stub is embedded in every Shot the
+      # user generates, so an Intel user needs an Intel slice.
+      - name: Build universal
+        run: ./scripts/build-app.sh --universal
+
+      - name: Confirm the build is universal and signed
+        run: |
+          for binary in \
+            "build/Doppio.app/Contents/MacOS/Doppio" \
+            "build/Doppio.app/Contents/Resources/DoppioShot" \
+            "build/Doppio.app/Contents/Resources/doppio"; do
+            ARCHS=$(lipo -archs "$binary")
+            echo "$binary: $ARCHS"
+            case "$ARCHS" in
+              *x86_64*arm64*|*arm64*x86_64*) ;;
+              *) echo "::error::$binary is not universal ($ARCHS)"; exit 1 ;;
+            esac
+          done
+          codesign --verify --verbose=1 build/Doppio.app
+
+      - name: Package
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          mkdir -p dist staging
+          cp -R build/Doppio.app staging/
+          # The drag-to-install layout Mac users expect.
+          ln -s /Applications staging/Applications
+          hdiutil create -volname "Doppio $VERSION" \
+            -srcfolder staging -ov -format UDZO "dist/Doppio-$VERSION.dmg"
+          # A zip as well, for anyone scripting the download. ditto (not zip)
+          # preserves the bundle's symlinks, xattrs and signature.
+          ditto -c -k --sequesterRsrc --keepParent build/Doppio.app "dist/Doppio-$VERSION.zip"
+          cd dist && shasum -a 256 *.dmg *.zip > "Doppio-$VERSION.sha256"
+          ls -la
+
+      - name: Publish the release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: Doppio ${{ steps.version.outputs.version }}
+          draft: true
+          files: |
+            dist/*.dmg
+            dist/*.zip
+            dist/*.sha256
+          body: |
+            ## Doppio ${{ steps.version.outputs.version }}
+
+            Universal build (Apple Silicon and Intel). Requires macOS 13 or later.
+
+            ### Installing
+
+            Download the `.dmg`, open it, and drag Doppio to Applications.
+
+            **This build is ad-hoc signed, not notarised.** macOS will refuse to
+            open it on first launch. Right-click the app and choose *Open*, then
+            confirm — or remove the quarantine flag:
+
+            ```
+            xattr -dr com.apple.quarantine /Applications/Doppio.app
+            ```
+
+            Building from source avoids this entirely, because locally built
+            bundles carry no quarantine flag:
+
+            ```
+            cd doppio && ./scripts/build-app.sh --install
+            ```
+
+            ### Verifying the download
+
+            ```
+            shasum -a 256 -c Doppio-${{ steps.version.outputs.version }}.zip.sha256
+            ```
+
+            ### Licence
+
+            PolyForm Noncommercial 1.0.0 — free for noncommercial use.
+            Commercial use requires a paid licence.

@@ -1,0 +1,32 @@
+# Swift Package Manager / build output
+.build/
+build/
+dist/
+*.o
+*.dSYM/
+Package.resolved
+
+# Xcode (if a project is ever added)
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+DerivedData/
+
+# macOS
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+
+# Generated Shots and local state must never be committed: they are ad-hoc
+# signed for one machine and contain absolute paths.
+*.app/
+
+# Stray codesign output (a malformed "--entitlements xml:-" writes a file)
+xml:-
+
+# Internal planning and competitive-research notes, kept out of the repo on
+# purpose: the original specification (whose core mechanism was disproven during
+# implementation), a competitive review of a named commercial product, and the
+# code-review rounds. Nothing here is needed to build or use Doppio; anything
+# worth publishing gets rewritten into doppio/docs/ rather than moved.
+notes/
